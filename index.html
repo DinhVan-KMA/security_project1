@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <title>KMA IoT Security Dashboard</title>
+    <style>
+        :root {
+            --bg-color: #1a1a2e;
+        }
+
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: var(--bg-color);
+            color: #333;
+            /* Chữ mặc định tối để nổi trên card trắng */
+            padding: 20px;
+            margin: 0;
+        }
+
+        h1 {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .main-container {
+            max-width: 1300px;
+            margin: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .top-row {
+            display: flex;
+            flex-direction: row;
+            gap: 20px;
+            align-items: stretch;
+        }
+
+        /* Các khối Card trắng chuyên nghiệp */
+        .card,
+        .log-container,
+        .chart-section {
+            background: #ffffff;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .control-panel {
+            flex: 2;
+            min-width: 400px;
+        }
+
+        .log-container {
+            flex: 3;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Chữ chế độ màu đen */
+        .mode-selector {
+            padding: 10px 0;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .mode-selector span {
+            color: #000 !important;
+            font-weight: bold;
+        }
+
+        select {
+            padding: 8px;
+            border-radius: 5px;
+            background: #4ecca3;
+            border: none;
+            font-weight: bold;
+            color: #000;
+        }
+
+        /* Grid cảm biến */
+        .sensor-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .sensor-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            border-left: 5px solid #36a2eb;
+        }
+
+        .sensor-item.temp {
+            border-left-color: #ff6384;
+        }
+
+        .value {
+            font-size: 28px;
+            font-weight: bold;
+            color: #1a1a2e;
+        }
+
+        /* Điều khiển thiết bị */
+        .control-group {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 10px;
+            margin-top: 10px;
+            border: 1px solid #eee;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.3s;
+        }
+
+        button:disabled {
+            background: #ccc !important;
+            cursor: not-allowed;
+        }
+
+        .btn-on {
+            background: #4ecca3;
+            color: white;
+        }
+
+        .btn-off {
+            background: #e94560;
+            color: white;
+        }
+
+        /* Bảng nhật ký */
+        .table-wrapper {
+            flex-grow: 1;
+            overflow-y: auto;
+            max-height: 400px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th {
+            position: sticky;
+            top: 0;
+            background: #f2f2f2;
+            padding: 12px;
+            text-align: left;
+        }
+
+        td {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        /* Màu HMAC Xanh/Đỏ */
+        .status-success {
+            color: #28a745 !important;
+            font-weight: bold;
+        }
+
+        .status-failed {
+            color: #dc3545 !important;
+            font-weight: bold;
+        }
+
+        /* Biểu đồ */
+        .chart-section {
+            width: 100%;
+        }
+
+        .chart-wrapper {
+            height: 350px;
+        }
+
+        @media (max-width: 900px) {
+            .top-row {
+                flex-direction: column;
+            }
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+
+    <h1>Hệ Thống Giám Sát IoT - KMA Security</h1>
+
+    <div class="main-container">
+        <div class="top-row">
+            <div class="card control-panel">
+                <div class="mode-selector">
+                    <span>CHẾ ĐỘ HỆ THỐNG:</span>
+                    <select id="modeSelect" onchange="changeMode(this.value)">
+                        <option value="Auto">Tự động (Auto)</option>
+                        <option value="Manual">Thủ công (Manual)</option>
+                    </select>
+                </div>
+                <div class="sensor-grid">
+                    <div class="sensor-item temp">Nhiệt độ <br> <span class="value" id="temp">--</span>°C</div>
+                    <div class="sensor-item soil">Độ ẩm đất <br> <span class="value" id="soil">--</span>%</div>
+                </div>
+                <div class="control-group">
+                    <strong>BƠM: <span id="pump-status">--</span></strong>
+                    <div class="btn-group">
+                        <button class="btn-on ctrl-btn" onclick="control('pump', 'ON')">BẬT</button>
+                        <button class="btn-off ctrl-btn" onclick="control('pump', 'OFF')">TẮT</button>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <strong>QUẠT: <span id="fan-status">--</span></strong>
+                    <div class="btn-group">
+                        <button class="btn-on ctrl-btn" onclick="control('fan', 'ON')">BẬT</button>
+                        <button class="btn-off ctrl-btn" onclick="control('fan', 'OFF')">TẮT</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="log-container">
+                <h2>Nhật ký Bảo mật (HMAC)</h2>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Thời gian</th>
+                                <th>Sự kiện</th>
+                                <th>Địa chỉ IP</th>
+                                <th>Chi tiết</th>
+                            </tr>
+                        </thead>
+                        <tbody id="log-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="chart-section">
+            <h2>Biểu đồ Xu hướng Cảm biến</h2>
+            <div class="chart-wrapper">
+                <canvas id="iotCombinedChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let lastProcessedLogId = 0;
+        // Khởi tạo Chart
+        const ctx = document.getElementById('iotCombinedChart').getContext('2d');
+        const iotChart = new Chart(ctx, {
+            data: {
+                labels: [],
+                datasets: [
+                    { type: 'line', label: 'Nhiệt độ (°C)', data: [], borderColor: '#ff6384', backgroundColor: 'rgba(255, 99, 132, 0.2)', yAxisID: 'y-temp', tension: 0.3 },
+                    { type: 'bar', label: 'Độ ẩm đất (%)', data: [], backgroundColor: 'rgba(54, 162, 235, 0.5)', borderColor: '#36a2eb', borderWidth: 1, yAxisID: 'y-soil' }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: {
+                    'y-temp': { type: 'linear', position: 'left', min: 0, max: 50 },
+                    'y-soil': { type: 'linear', position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false } }
+                }
+            }
+        });
+
+        function updateChartData(temp, soil) {
+            const now = new Date().toLocaleTimeString('vi-VN');
+            if (iotChart.data.labels.length > 15) {
+                iotChart.data.labels.shift();
+                iotChart.data.datasets[0].data.shift();
+                iotChart.data.datasets[1].data.shift();
+            }
+            iotChart.data.labels.push(now);
+            iotChart.data.datasets[0].data.push(temp);
+            iotChart.data.datasets[1].data.push(soil);
+            iotChart.update();
+        }
+
+        async function updateData() {
+            try {
+                const res = await fetch('/api/node');
+                const n = await res.json();
+                document.getElementById('temp').innerText = n.temp;
+                document.getElementById('soil').innerText = n.soil;
+                document.getElementById('pump-status').innerText = n.pump;
+                document.getElementById('fan-status').innerText = n.fan;
+                document.getElementById('modeSelect').value = n.mode;
+                const logRes = await fetch('/api/logs');
+                const logs = await logRes.json();
+
+                if (logs.length > 0) {
+                    const latestLog = logs[0]; // Lấy log mới nhất
+
+                    // Chỉ vẽ nếu là HMAC_SUCCESS và là một log mới hoàn toàn (ID khác ID cũ)
+                    if (latestLog.event_type === 'HMAC_SUCCESS' && latestLog.id !== lastProcessedLogId) {
+                        updateChartData(n.temp, n.soil);
+                        lastProcessedLogId = latestLog.id; // Cập nhật ID đã xử lý
+                    }
+                }
+                const btns = document.querySelectorAll('.ctrl-btn');
+                btns.forEach(b => b.disabled = (n.mode === 'Auto'));
+
+
+            } catch (e) { console.log("Lỗi lấy dữ liệu node"); }
+        }
+
+        async function updateSecurityLogs() {
+            try {
+                const response = await fetch('/api/logs');
+                const logs = await response.json();
+                const tableBody = document.getElementById('log-table-body');
+                tableBody.innerHTML = logs.map(log => {
+                    const statusClass = log.event_type === 'HMAC_SUCCESS' ? 'status-success' : 'status-failed';
+                    return `<tr>
+                        <td>${new Date(log.created_at).toLocaleTimeString()}</td>
+                        <td class="${statusClass}">${log.event_type}</td>
+                        <td>${log.ip_address}</td>
+                        <td style="font-family: monospace;">${log.details.substring(0, 20)}...</td>
+                    </tr>`;
+                }).join('');
+            } catch (e) { console.log("Lỗi cập nhật log"); }
+        }
+
+        async function changeMode(val) {
+            await fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'mode', value: val }) });
+            updateData();
+        }
+
+        async function control(device, status) {
+            await fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: device, value: status }) });
+            updateData();
+        }
+
+        setInterval(updateData, 3000);
+        setInterval(updateSecurityLogs, 3000);
+        updateData();
+        updateSecurityLogs();
+    </script>
+</body>
+
+</html>
