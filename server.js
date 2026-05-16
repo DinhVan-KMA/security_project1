@@ -51,8 +51,8 @@ app.post('/api/sensor', (req, res) => {
     const { data, hmac_received } = req.body;
     if (!data) return res.status(400).send("No data");
 
-    const dataString = JSON.stringify(data);
-    const calculatedHmac = crypto.createHmac('sha256', SECRET_KEY).update(dataString).digest('hex');
+    const rawString = `temp=${data.temp}&soil=${data.soil}&fan=${data.fan}&pump=${data.pump}`;
+    const calculatedHmac = crypto.createHmac('sha256', SECRET_KEY).update(rawString).digest('hex');
     const ip = req.ip.replace('::ffff:', ''); // Lấy IP người gửi
 
     if (calculatedHmac === hmac_received) {
@@ -62,8 +62,8 @@ app.post('/api/sensor', (req, res) => {
         nodeState.lastUpdate = new Date().toLocaleString();
 
         if (nodeState.mode === "Auto") {
-            nodeState.pump = (data.soil < 30) ? "ON" : "OFF";
-            nodeState.fan = (data.temp > 32) ? "ON" : "OFF";
+            nodeState.pump = data.pump ? "ON" : "OFF";
+            nodeState.fan = data.fan ? "ON" : "OFF";
         }
 
         // 2. Lưu vào Database (Sensor data & Security log thành công)
@@ -73,7 +73,7 @@ app.post('/api/sensor', (req, res) => {
         db.query("INSERT INTO security_logs (event_type, ip_address, details) VALUES (?, ?, ?)",
             ['HMAC_SUCCESS', ip, hmac_received]);
 
-        console.log(`[${nodeState.mode}] Update: T=${data.temp}, S=${data.soil}, P=${nodeState.pump}, F=${nodeState.fan}`);
+        //console.log(`[${nodeState.mode}] Update: T=${data.temp}, S=${data.soil}, P=${nodeState.pump}, F=${nodeState.fan}`);
 
         // 3. Phản hồi lệnh cho ESP32
         res.status(200).json({
@@ -90,7 +90,6 @@ app.post('/api/sensor', (req, res) => {
         res.status(403).send("Sai HMAC");
     }
 });
-
 // --- API ĐIỀU KHIỂN TỪ WEB ---
 app.post('/api/control', (req, res) => {
     const { type, value } = req.body;
@@ -107,7 +106,25 @@ app.post('/api/control', (req, res) => {
 
     res.json({ success: true });
 });
+app.get('/api/chart', (req, res) => {
 
+    const sql = `
+        SELECT * FROM sensor_data
+        ORDER BY id DESC
+        LIMIT 15
+    `;
+
+    db.query(sql, (err, results) => {
+
+        if (err) {
+            console.error(err);
+            return res.status(500).json([]);
+        }
+
+        // Đảo lại cho đúng thứ tự thời gian
+        res.json(results.reverse());
+    });
+});
 app.listen(3000, () => {
 
     console.log("Server đang chạy tại: http://localhost:3000");

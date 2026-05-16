@@ -286,17 +286,36 @@
             }
         });
 
-        function updateChartData(temp, soil) {
-            const now = new Date().toLocaleTimeString('vi-VN');
-            if (iotChart.data.labels.length > 15) {
-                iotChart.data.labels.shift();
-                iotChart.data.datasets[0].data.shift();
-                iotChart.data.datasets[1].data.shift();
+        async function loadChartData() {
+
+            try {
+
+                const response = await fetch('/api/chart');
+                const data = await response.json();
+
+                // reset dữ liệu cũ
+                iotChart.data.labels = [];
+                iotChart.data.datasets[0].data = [];
+                iotChart.data.datasets[1].data = [];
+
+                data.forEach(item => {
+
+                    const time = new Date(item.created_at)
+                        .toLocaleTimeString('vi-VN');
+
+                    iotChart.data.labels.push(time);
+
+                    iotChart.data.datasets[0].data.push(item.temp);
+
+                    iotChart.data.datasets[1].data.push(item.soil);
+                });
+
+                iotChart.update();
+
+            } catch (e) {
+
+                console.log("Lỗi load chart");
             }
-            iotChart.data.labels.push(now);
-            iotChart.data.datasets[0].data.push(temp);
-            iotChart.data.datasets[1].data.push(soil);
-            iotChart.update();
         }
 
         async function updateData() {
@@ -311,15 +330,7 @@
                 const logRes = await fetch('/api/logs');
                 const logs = await logRes.json();
 
-                if (logs.length > 0) {
-                    const latestLog = logs[0]; // Lấy log mới nhất
-
-                    // Chỉ vẽ nếu là HMAC_SUCCESS và là một log mới hoàn toàn (ID khác ID cũ)
-                    if (latestLog.event_type === 'HMAC_SUCCESS' && latestLog.id !== lastProcessedLogId) {
-                        updateChartData(n.temp, n.soil);
-                        lastProcessedLogId = latestLog.id; // Cập nhật ID đã xử lý
-                    }
-                }
+                loadChartData();
                 const btns = document.querySelectorAll('.ctrl-btn');
                 btns.forEach(b => b.disabled = (n.mode === 'Auto'));
 
@@ -358,6 +369,7 @@
         setInterval(updateSecurityLogs, 3000);
         updateData();
         updateSecurityLogs();
+        loadChartData();
     </script>
 </body>
 
