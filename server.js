@@ -3,18 +3,18 @@ const bodyParser = require('body-parser');
 const crypto = require('crypto');
 const path = require('path');
 const mysql = require('mysql2');
-
+require('dotenv').config();
 const app = express();
 app.use(bodyParser.json());
 
-const SECRET_KEY = "KMA_SECURE_KEY_2026";
+const SECRET_KEY = process.env.SECRET_KEY;
 
 // Cấu hình kết nối MySQL
 const db = mysql.createConnection({
-    host: 'localhost',
-    user: 'root',
-    password: '123456',
-    database: 'kma_db'
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME
 });
 
 db.connect(err => {
