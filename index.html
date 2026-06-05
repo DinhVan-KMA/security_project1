@@ -13,7 +13,6 @@
             font-family: 'Segoe UI', sans-serif;
             background: var(--bg-color);
             color: #333;
-            /* Chữ mặc định tối để nổi trên card trắng */
             padding: 20px;
             margin: 0;
         }
@@ -39,7 +38,6 @@
             align-items: stretch;
         }
 
-        /* Các khối Card trắng chuyên nghiệp */
         .card,
         .log-container,
         .chart-section {
@@ -60,7 +58,6 @@
             flex-direction: column;
         }
 
-        /* Chữ chế độ màu đen */
         .mode-selector {
             padding: 10px 0;
             margin-bottom: 20px;
@@ -84,7 +81,6 @@
             color: #000;
         }
 
-        /* Grid cảm biến */
         .sensor-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -110,7 +106,6 @@
             color: #1a1a2e;
         }
 
-        /* Điều khiển thiết bị */
         .control-group {
             background: #f8f9fa;
             padding: 12px;
@@ -150,7 +145,6 @@
             color: white;
         }
 
-        /* Bảng nhật ký */
         .table-wrapper {
             flex-grow: 1;
             overflow-y: auto;
@@ -176,18 +170,6 @@
             border-bottom: 1px solid #eee;
         }
 
-        /* Màu HMAC Xanh/Đỏ */
-        .status-success {
-            color: #28a745 !important;
-            font-weight: bold;
-        }
-
-        .status-failed {
-            color: #dc3545 !important;
-            font-weight: bold;
-        }
-
-        /* Biểu đồ */
         .chart-section {
             width: 100%;
         }
@@ -247,8 +229,7 @@
                             <tr>
                                 <th>Thời gian</th>
                                 <th>Sự kiện</th>
-                                <th>Địa chỉ IP</th>
-                                <th>Chi tiết</th>
+                                <th>Bảo mật</th>
                             </tr>
                         </thead>
                         <tbody id="log-table-body"></tbody>
@@ -266,8 +247,7 @@
     </div>
 
     <script>
-        let lastProcessedLogId = 0;
-        // Khởi tạo Chart
+        // Khởi tạo khung đồ thị tương thích API gốc /api/chart
         const ctx = document.getElementById('iotCombinedChart').getContext('2d');
         const iotChart = new Chart(ctx, {
             data: {
@@ -278,7 +258,8 @@
                 ]
             },
             options: {
-                responsive: true, maintainAspectRatio: false,
+                responsive: true,
+                maintainAspectRatio: false,
                 scales: {
                     'y-temp': { type: 'linear', position: 'left', min: 0, max: 50 },
                     'y-soil': { type: 'linear', position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false } }
@@ -286,73 +267,67 @@
             }
         });
 
+        // Tải dữ liệu lịch sử cảm biến từ API /api/chart (Đọc linh hoạt tên cột timestamp hoặc created_at)
         async function loadChartData() {
-
             try {
-
                 const response = await fetch('/api/chart');
                 const data = await response.json();
 
-                // reset dữ liệu cũ
                 iotChart.data.labels = [];
                 iotChart.data.datasets[0].data = [];
                 iotChart.data.datasets[1].data = [];
 
                 data.forEach(item => {
-
-                    const time = new Date(item.created_at)
-                        .toLocaleTimeString('vi-VN');
-
+                    const time = new Date(item.timestamp || item.created_at).toLocaleTimeString('vi-VN');
                     iotChart.data.labels.push(time);
-
                     iotChart.data.datasets[0].data.push(item.temp);
-
                     iotChart.data.datasets[1].data.push(item.soil);
                 });
 
                 iotChart.update();
-
             } catch (e) {
-
-                console.log("Lỗi load chart");
+                console.log("Lỗi load dữ liệu biểu đồ:", e);
             }
         }
 
+        // Đồng bộ hóa trạng thái hiện thời của hệ thống và nút nhấn
         async function updateData() {
             try {
                 const res = await fetch('/api/node');
                 const n = await res.json();
+
                 document.getElementById('temp').innerText = n.temp;
                 document.getElementById('soil').innerText = n.soil;
                 document.getElementById('pump-status').innerText = n.pump;
                 document.getElementById('fan-status').innerText = n.fan;
                 document.getElementById('modeSelect').value = n.mode;
-                const logRes = await fetch('/api/logs');
-                const logs = await logRes.json();
 
-                loadChartData();
                 const btns = document.querySelectorAll('.ctrl-btn');
                 btns.forEach(b => b.disabled = (n.mode === 'Auto'));
-
-
-            } catch (e) { console.log("Lỗi lấy dữ liệu node"); }
+            } catch (e) {
+                console.log("Lỗi lấy dữ liệu trạng thái Node:", e);
+            }
         }
 
+        // Cập nhật Nhật ký Bảo mật rút gọn 3 cột chuẩn (Ẩn chi tiết IP và mã hóa chuỗi)
         async function updateSecurityLogs() {
             try {
                 const response = await fetch('/api/logs');
                 const logs = await response.json();
                 const tableBody = document.getElementById('log-table-body');
+
                 tableBody.innerHTML = logs.map(log => {
-                    const statusClass = log.event_type === 'HMAC_SUCCESS' ? 'status-success' : 'status-failed';
+                    const statusColor = log.status === 'HMAC SUCCESS' ? '#2ecc71' : '#e74c3c';
+
                     return `<tr>
-                        <td>${new Date(log.created_at).toLocaleTimeString()}</td>
-                        <td class="${statusClass}">${log.event_type}</td>
-                        <td>${log.ip_address}</td>
-                        <td style="font-family: monospace;">${log.details.substring(0, 20)}...</td>
+                        <td>${new Date(log.timestamp || log.created_at).toLocaleTimeString()}</td>
+                        <td>${log.event_direction}</td>
+                        <td style="color: ${statusColor}; font-weight: bold;">${log.status}</td>
                     </tr>`;
                 }).join('');
-            } catch (e) { console.log("Lỗi cập nhật log"); }
+            } catch (e) {
+                console.log("Lỗi nạp nhật ký bảo mật:", e);
+            }
         }
 
         async function changeMode(val) {
@@ -365,8 +340,12 @@
             updateData();
         }
 
+        // Chu kỳ quét tối ưu độc lập để tránh xung đột hình ảnh và lag mạng
         setInterval(updateData, 3000);
         setInterval(updateSecurityLogs, 3000);
+        setInterval(loadChartData, 5000); // Đồ thị quét giãn cách 5 giây tránh đứng hình
+
+        // Chạy ngay lần đầu khi mở trang Dashboard
         updateData();
         updateSecurityLogs();
         loadChartData();
