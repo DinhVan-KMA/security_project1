@@ -185,6 +185,7 @@
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
 </head>
 
 <body>
@@ -228,6 +229,7 @@
                         <thead>
                             <tr>
                                 <th>Thời gian</th>
+                                <th>Thiết bị</th>
                                 <th>Sự kiện</th>
                                 <th>Bảo mật</th>
                             </tr>
@@ -267,7 +269,7 @@
             }
         });
 
-        // Tải dữ liệu lịch sử cảm biến từ API /api/chart (Đọc linh hoạt tên cột timestamp hoặc created_at)
+        // Tải dữ liệu lịch sử cảm biến từ API /api/chart (Chạy lúc khởi tạo trang)
         async function loadChartData() {
             try {
                 const response = await fetch('/api/chart');
@@ -290,65 +292,138 @@
             }
         }
 
-        // Đồng bộ hóa trạng thái hiện thời của hệ thống và nút nhấn
-        async function updateData() {
+        // Tải toàn bộ dữ liệu trạng thái thiết bị lúc vừa mở trang
+        async function loadCurrentState() {
             try {
                 const res = await fetch('/api/node');
                 const n = await res.json();
-
-                document.getElementById('temp').innerText = n.temp;
-                document.getElementById('soil').innerText = n.soil;
-                document.getElementById('pump-status').innerText = n.pump;
-                document.getElementById('fan-status').innerText = n.fan;
-                document.getElementById('modeSelect').value = n.mode;
-
-                const btns = document.querySelectorAll('.ctrl-btn');
-                btns.forEach(b => b.disabled = (n.mode === 'Auto'));
+                renderNodeState(n);
             } catch (e) {
-                console.log("Lỗi lấy dữ liệu trạng thái Node:", e);
+                console.log("Lỗi lấy dữ liệu trạng thái Node ban đầu:", e);
             }
         }
 
-        // Cập nhật Nhật ký Bảo mật rút gọn 3 cột chuẩn (Ẩn chi tiết IP và mã hóa chuỗi)
-        async function updateSecurityLogs() {
+        // Tải 10 nhật ký bảo mật cũ từ cơ sở dữ liệu khi load trang
+        async function loadHistoricalLogs() {
             try {
                 const response = await fetch('/api/logs');
                 const logs = await response.json();
                 const tableBody = document.getElementById('log-table-body');
 
                 tableBody.innerHTML = logs.map(log => {
-                    const statusColor = log.status === 'HMAC SUCCESS' ? '#2ecc71' : '#e74c3c';
+                    // 🆕 ĐÃ SỬA: Phân chia màu sắc rõ ràng cho từng trạng thái
+                    let statusColor = '#e74c3c'; // Mặc định lỗi nguy hiểm màu đỏ
+                    if (log.status === 'HMAC SUCCESS') {
+                        statusColor = '#2ecc71'; // Xanh lá
+                    } else if (log.status === 'CONTROL SUCCESS') {
+                        statusColor = '#3498db'; // Xanh dương (Lệnh admin hợp pháp)
+                    }
 
+                    const time = new Date(log.timestamp || log.created_at).toLocaleTimeString();
                     return `<tr>
-                        <td>${new Date(log.timestamp || log.created_at).toLocaleTimeString()}</td>
-                        <td>${log.event_direction}</td>
+                        <td>${time}</td>
+                        <td>${log.device_id}</td>
+                        <td>${log.event_direction}</td>     
                         <td style="color: ${statusColor}; font-weight: bold;">${log.status}</td>
                     </tr>`;
                 }).join('');
             } catch (e) {
-                console.log("Lỗi nạp nhật ký bảo mật:", e);
+                console.log("Lỗi nạp lịch sử nhật ký bảo mật:", e);
             }
         }
 
+        // Hàm hỗ trợ cập nhật dữ liệu trạng thái phần cứng lên giao diện các ô thẻ
+        function renderNodeState(n) {
+            document.getElementById('temp').innerText = n.temp;
+            document.getElementById('soil').innerText = n.soil;
+            document.getElementById('pump-status').innerText = n.pump;
+            document.getElementById('fan-status').innerText = n.fan;
+            document.getElementById('modeSelect').value = n.mode;
+
+            const btns = document.querySelectorAll('.ctrl-btn');
+            btns.forEach(b => b.disabled = (n.mode === 'Auto'));
+        }
+
+        // 🆕 WEBSOCKET UPGRADE: Hàm xử lý chèn log mới thời gian thực vào ĐẦU bảng và giới hạn 10 dòng
+        function handleIncomingLog(log) {
+            const tableBody = document.getElementById('log-table-body');
+
+            // 🆕 ĐÃ SỬA: Phân chia màu sắc rõ ràng cho log thời gian thực
+            let statusColor = '#e74c3c'; // Mặc định lỗi nguy hiểm màu đỏ
+            if (log.status === 'HMAC SUCCESS') {
+                statusColor = '#2ecc71'; // Xanh lá
+            } else if (log.status === 'CONTROL SUCCESS') {
+                statusColor = '#3498db'; // Xanh dương (Lệnh admin hợp pháp)
+            }
+
+            const time = new Date(log.timestamp || log.created_at).toLocaleTimeString();
+
+            const rowHtml = `<tr>
+                <td>${time}</td>
+                <td>${log.device_id}</td>
+                <td>${log.event_direction}</td>     
+                <td style="color: ${statusColor}; font-weight: bold;">${log.status}</td>
+            </tr>`;
+
+            // Chèn dòng mới lên đầu bảng
+            tableBody.insertAdjacentHTML('afterbegin', rowHtml);
+
+            // Nếu vượt quá 10 dòng hiển thị thì xóa dòng cuối cùng cũ nhất đi để giao diện gọn gàng
+            while (tableBody.rows.length > 10) {
+                tableBody.deleteRow(tableBody.rows.length - 1);
+            }
+        }
+
+        const AdminToken = "KMA_ADMIN_SECRET_KEY_2026"; // Gửi kèm token xác thực chiều xuống
+
         async function changeMode(val) {
-            await fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'mode', value: val }) });
-            updateData();
+            await fetch('/api/control', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + AdminToken
+                },
+                body: JSON.stringify({ type: 'mode', value: val })
+            });
+            // Gỡ bỏ gọi hàm render tại đây, WebSocket từ server trả về sẽ tự kích hoạt cập nhật đồng bộ toàn dự án
         }
 
         async function control(device, status) {
-            await fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: device, value: status }) });
-            updateData();
+            await fetch('/api/control', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + AdminToken
+                },
+                body: JSON.stringify({ type: device, value: status })
+            });
+            // Gỡ bỏ gọi hàm render tại đây, WebSocket từ server trả về sẽ tự kích hoạt cập nhật đồng bộ toàn dự án
         }
 
-        // Chu kỳ quét tối ưu độc lập để tránh xung đột hình ảnh và lag mạng
-        setInterval(updateData, 3000);
-        setInterval(updateSecurityLogs, 3000);
-        setInterval(loadChartData, 5000); // Đồ thị quét giãn cách 5 giây tránh đứng hình
+        /* ========================================================================
+           🆕 WEBSOCKET UPGRADE: KHỞI TẠO KẾT NỐI VÀ LẮNG NGHE SỰ KIỆN REATIME
+           ======================================================================== */
+        const socket = io();
 
-        // Chạy ngay lần đầu khi mở trang Dashboard
-        updateData();
-        updateSecurityLogs();
-        loadChartData();
+        // 1. Lắng nghe log an ninh mới (Cả thành công lẫn lỗi tấn công)
+        socket.on('new-log', (logData) => {
+            console.log("🔌 [WebSocket] Nhận dữ liệu log mới:", logData);
+            handleIncomingLog(logData);
+        });
+
+        // 2. Lắng nghe cập nhật trạng thái thiết bị và cảm biến mới
+        socket.on('node-update', (nodeState) => {
+            console.log("📊 [WebSocket] Nhận cập nhật trạng thái Node mới:", nodeState);
+            renderNodeState(nodeState); // Đổi text hiển thị ngay lập tức
+            loadChartData();            // Kích hoạt nạp lại đồ thị khi vừa phát sinh bản ghi MySQL cảm biến mới
+        });
+
+        // Chạy tải dữ liệu tĩnh cơ sở ban đầu duy nhất một lần khi vừa khởi động trang web
+        window.onload = () => {
+            loadCurrentState();
+            loadHistoricalLogs();
+            loadChartData();
+        };
     </script>
 </body>
 
